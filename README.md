@@ -22,7 +22,7 @@ This feature can be used to model:
 - Guide rails
 
 ## Motivation
-I noticed I used a lot of sweeps with square cross sections a lot in my builds such as frames. Before I had to create a path, plane, sketch, and finally the sweep. I decided to learn how to code in Onshape's featurescript language so that I can use it to automate sweep creation which sped up modeling a lot for me. I also released this code to the public and it is used by over 100+ users acording to the linked doc statistic.
+I noticed I used a lot of sweeps with square cross sections a lot in my builds such as frames. Before I had to create a path, plane, sketch, and finally the sweep. I decided to learn how to code in Onshape's featurescript language so that I can use it to automate sweep creation which sped up modeling a lot for me. I also released this code to the public and it is used by over 100+ users according to the linked doc statistic.
 
 ## Author
 Andy Tran
