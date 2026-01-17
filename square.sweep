@@ -1,0 +1,155 @@
+FeatureScript 1403;
+export import(path : "onshape/std/geometry.fs", version : "1403.0");
+import(path : "f902670516b3542414e3ab98/935ab687655068b2cec5e64e/81858a9ae2c1683847d4a5b0", version : "2c858e2111c8ab26cd0ddb31");
+export import(path : "0bb13c1b6ed6d4a6dd75cf99/666e16be7b401a828f78b5d3/70d0c8c68da01e344819d3ef", version : "bbdcc36af8c391b21ece46e3");
+
+
+annotation { "Feature Type Name" : "Square sweep" }
+export const squareSweep = defineFeature(function(context is Context, id is Id, definition is map)
+    precondition
+    {
+        booleanStepTypePredicate(definition);
+
+        annotation { "Name" : "Path", "Filter" : EntityType.EDGE && ConstructionObject.NO || BodyType.WIRE }
+        definition.pathQ is Query;
+
+        annotation { "Name" : "Square size" }
+        isLength(definition.size, SHELL_OFFSET_BOUNDS);
+
+        annotation { "Name" : "Partial sweep" }
+        definition.partial is boolean;
+
+        if (definition.partial)
+        {
+            annotation { "Name" : "Flip path" }
+            definition.flipPath is boolean;
+
+            annotation { "Name" : "Parameters" }
+            isAnything(definition.paramArr);
+
+            annotation { "Name" : "Length" }
+            isLength(definition.partialLength, LENGTH_BOUNDS);
+        }
+
+        booleanStepScopePredicate(definition);
+    }
+    {
+        // Normalize path query to edges (support selecting wires/bodies)
+        definition.pathQ = qUnion([
+                    qEntityFilter(definition.pathQ, EntityType.EDGE),
+                    qOwnedByBody(qBodyType(definition.pathQ, BodyType.WIRE), EntityType.EDGE)
+                ]);
+
+        // Start with the full path (may be replaced by partial segments below)
+        var sweepPaths = [definition.pathQ];
+
+        // If partial sweep requested, split into path segments
+        if (definition.partial)
+        {
+            const pathLength = evLength(context, { "entities" : definition.pathQ });
+
+            sweepPaths = [];
+            var i = 0;
+
+            for (var paramDefinition in definition.paramArr)
+            {
+                var startParam = evPathParameter(paramDefinition, pathLength, 0);
+                var endParam = (startParam + definition.partialLength / pathLength) % 1;
+
+                if (definition.flipPath)
+                {
+                    startParam = 1 - startParam;
+                    endParam = 1 - endParam;
+                }
+
+                opPath(context, id + ("partialPath" ~ i), {
+                            "pathTrType" : pathType.PATH_3D,
+                            "pathQuery" : definition.pathQ,
+                            "startParameter" : startParam,
+                            "endParameter" : endParam,
+                            "lengthStep" : 0.1 * millimeter,
+                            "tolerance" : 0.1 * millimeter
+                        });
+
+                sweepPaths = append(sweepPaths, qCreatedBy(id + ("partialPath" ~ i), EntityType.EDGE));
+
+                i += 1;
+            }
+        }
+
+        // Collect created bodies to optionally perform boolean ops
+        var sweepBodies = [];
+        var i = 0;
+        for (var sweepPath in sweepPaths)
+        {
+            const tangentLine = evEdgeTangentLine(context, {
+                        "edge" : qNthElement(sweepPath, 0),
+                        "parameter" : 0 // use start of the path
+                    });
+
+            // Create a work plane perpendicular to the path tangent at the start
+            const workPlane = plane(tangentLine.origin, tangentLine.direction, perpendicularVector(tangentLine.direction));
+
+            // Create a sketch on that plane and draw a centered square
+            var sk = newSketchOnPlane(context, id + ("sk" ~ i), { "sketchPlane" : workPlane });
+
+            const half = definition.size / 2;
+
+            skRectangle(sk, "squareRect", {
+                        "firstCorner"  : vector(-half, -half),
+                        "secondCorner" : vector(half, half)
+                    });
+
+            skSolve(sk);
+
+            // Sweep the closed sketch region along the path
+            opSweep(context, id + ("sweep" ~ i), {
+                        "profiles" : qSketchRegion(id + ("sk" ~ i), true),
+                        "path" : sweepPath
+                    });
+
+            // Record the created body for later boolean operations
+            sweepBodies = append(sweepBodies, qCreatedBy(id + ("sweep" ~ i), EntityType.BODY));
+
+            // Delete the sketch used to create the profile
+            opDeleteBodies(context, id + ("deleteSk" ~ i), { "entities" : qCreatedBy(id + ("sk" ~ i)) });
+
+            i += 1;
+        }
+
+        // If we created temporary partial path edges, delete them
+        if (definition.partial)
+            opDeleteBodies(context, id + "deletePaths", {
+                        "entities" : qUnion(sweepPaths)
+                    });
+
+        // Combine list into a single query for boolean ops
+        sweepBodies = qUnion(sweepBodies);
+
+        // Handle boolean operations: ADD, REMOVE, INTERSECT (or leave NEW)
+        if (definition.operationType != NewBodyOperationType.NEW)
+        {
+            if (definition.operationType == NewBodyOperationType.ADD)
+            {
+                // When adding, union sweep bodies with boolean scope
+                definition.tools = qUnion(definition.booleanScope, sweepBodies);
+                definition.operationType = BooleanOperationType.UNION;
+            }
+            else if (definition.operationType == NewBodyOperationType.REMOVE)
+            {
+                // When removing, subtract the sweep bodies from the boolean scope targets
+                definition.tools = sweepBodies;
+                definition.targets = definition.booleanScope;
+                definition.operationType = BooleanOperationType.SUBTRACTION;
+            }
+            else if (definition.operationType == NewBodyOperationType.INTERSECT)
+            {
+                // When intersecting, intersect boolean scope with sweep bodies
+                definition.tools = qUnion(definition.booleanScope, sweepBodies);
+                definition.operationType = BooleanOperationType.INTERSECTION;
+            }
+
+            // Perform the boolean operation using the adjusted definition map
+            opBoolean(context, id + "boolean", definition);
+        }
+    });
