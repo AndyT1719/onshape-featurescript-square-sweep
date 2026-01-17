@@ -1,7 +1,7 @@
-# Square Sweep — Onshape FeatureScript
+# Square Sweep Onshape FeatureScript
 
 ## Overview
-This project makes a **square-profile sweep** along a user defined path. The feature allows users to dictate square dimensions and sweep boolean operations.
+This project makes a **square profile sweep** along a user defined path. The feature allows users to dictate square dimensions and sweep boolean operations.
 
 ## Feature Capabilities
 - Square cross section sweep
